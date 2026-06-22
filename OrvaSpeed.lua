@@ -1,4 +1,4 @@
--- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15)
+-- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15 con Auto-Delete Obstacles)
 
 local player = game.Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local speedEnabled = true
 local autoWalkEnabled = true
 local autoFarmEnabled = true
+local autoDeleteDuringFarm = true -- nuevo: eliminar obstáculos mientras hace farm
 local multiplier = 9
 
 local function getHum() return player.Character and player.Character:FindFirstChild("Humanoid") end
@@ -69,7 +70,32 @@ local function nearestPart(parts, pos)
     return best, bestD
 end
 
--- AUTO FARM: recorre etapas 1..15 en orden
+-- NUEVO: Eliminar obstáculos cercanos dentro de un radio
+local function deleteNearbyObstacles(origin, radius)
+    local count = 0
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.CanCollide and v.Parent then
+            local ok, pos = pcall(function() return v.Position end)
+            if ok and pos and (pos - origin).Magnitude <= radius and v.Size.Y < 80 then
+                local n = v.Name:lower()
+                if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") then
+                    pcall(function()
+                        v.CanCollide = false
+                        v.Transparency = 0.85
+                        -- destruir si muy pequeño o peligro de bloqueo
+                        if v.Size.Magnitude <= 30 then
+                            v:Destroy()
+                        end
+                    end)
+                    count = count + 1
+                end
+            end
+        end
+    end
+    return count
+end
+
+-- AUTO FARM: recorre etapas 1..15 en orden con eliminación opcional de obstáculos
 local farmActive = false
 local farmThread = nil
 
@@ -108,6 +134,13 @@ local function farmStages(maxStage)
                     -- acercarse al target hasta distancia pequeña
                     local tries = 0
                     while farmActive and target and target.Parent and root and (target.Position - root.Position).Magnitude > 8 and tries < 600 do
+                        -- eliminar obstáculos cercanos si está activado
+                        if autoDeleteDuringFarm then
+                            pcall(function()
+                                deleteNearbyObstacles(root.Position, 50) -- radio 50 studs alrededor
+                            end)
+                        end
+
                         local dir = (target.Position - root.Position)
                         if dir.Magnitude > 0 then
                             local vel = dir.Unit * 140 + Vector3.new(0, 30, 0)
@@ -122,8 +155,11 @@ local function farmStages(maxStage)
                     task.wait(0.6)
                 end
             else
-                -- Si no hay partes con número exacto, intentar buscar parts cuyo nombre contenga "stage" y el número como texto separado
-                -- (skip silently)
+                -- Si no hay partes con número exacto, intentar buscar parts cuyo nombre contenga "stage" sin número
+                -- Además podemos eliminar obstáculos en esa zona para intentar pasar
+                if autoDeleteDuringFarm and root then
+                    pcall(function() deleteNearbyObstacles(root.Position, 60) end)
+                end
             end
             -- pequeña pausa entre etapas
             task.wait(0.3)
@@ -145,13 +181,13 @@ if autoFarmEnabled then
     task.spawn(function() farmStages(15) end)
 end
 
--- Delete Obstacles (ejecútalo manualmente con G o botón)
+-- Delete Obstacles manual (ejecútalo con G o botón)
 local function deleteObstacles()
     local count = 0
     for _, v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.CanCollide and v.Size.Y < 50 then
+        if v:IsA("BasePart") and v.CanCollide and v.Size.Y < 80 then
             local n = v.Name:lower()
-            if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") then
+            if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") then
                 pcall(function()
                     v.CanCollide = false
                     v.Transparency = 0.75
@@ -178,10 +214,14 @@ UIS.InputBegan:Connect(function(input, gpe)
             stopFarm()
             print("[OrvaFarm] AutoFarm toggled OFF")
         end
+    elseif input.KeyCode == Enum.KeyCode.H then
+        -- alternar auto-delete during farm
+        autoDeleteDuringFarm = not autoDeleteDuringFarm
+        print("[OrvaFarm] autoDeleteDuringFarm = ", tostring(autoDeleteDuringFarm))
     end
 end)
 
-print("✅ [ORVA] Auto Farm cargado - Recorriendo etapas 1..15 (Presiona F para alternar, G para eliminar obstáculos)")
+print("✅ [ORVA] Auto Farm cargado - Recorriendo etapas 1..15 (Presiona F para alternar, G para eliminar obstáculos, H para toggle auto-delete)")
 pcall(function()
-    game.StarterGui:SetCore("SendNotification", {Title="Orva Auto Farm", Text="AutoFarm: etapas 1..15 activado. Presiona F para toggle, G para Delete", Duration=6})
+    game.StarterGui:SetCore("SendNotification", {Title="Orva Auto Farm", Text="AutoFarm: etapas 1..15 activado. F toggle, G delete, H toggle auto-delete", Duration=6})
 end)
