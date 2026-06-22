@@ -1,4 +1,4 @@
--- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15 con Auto-Delete Obstacles)
+-- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15 con Auto-Delete Obstacles más seguro)
 
 local player = game.Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
@@ -7,7 +7,7 @@ local RunService = game:GetService("RunService")
 local speedEnabled = true
 local autoWalkEnabled = true
 local autoFarmEnabled = true
-local autoDeleteDuringFarm = true -- nuevo: eliminar obstáculos mientras hace farm
+local autoDeleteDuringFarm = true -- eliminar obstáculos mientras hace farm (ahora más selectivo)
 local multiplier = 9
 
 local function getHum() return player.Character and player.Character:FindFirstChild("Humanoid") end
@@ -70,32 +70,64 @@ local function nearestPart(parts, pos)
     return best, bestD
 end
 
--- NUEVO: Eliminar obstáculos cercanos dentro de un radio
-local function deleteNearbyObstacles(origin, radius)
+-- BUSCAR FOLDER DEL MAPA (World 2) si existe
+local function findWorldFolder()
+    local candidates = {"World 2", "World2", "World_2", "WorldTwo", "Map", "Maps", "World"}
+    for _, name in ipairs(candidates) do
+        local f = workspace:FindFirstChild(name)
+        if f and (f:IsA("Model") or f:IsA("Folder")) then
+            return f
+        end
+    end
+    return nil
+end
+
+local worldFolder = findWorldFolder()
+
+-- NUEVO: Eliminar obstáculos SOLO a lo largo del camino entre A y B y preferentemente dentro del folder World2
+local function deleteObstaclesAlongPath(a, b, lateralRadius)
     local count = 0
-    for _, v in ipairs(workspace:GetDescendants()) do
+    local ab = b - a
+    local abLen2 = ab:Dot(ab)
+    if abLen2 == 0 then return 0 end
+
+    local searchRoot = worldFolder or workspace
+    for _, v in ipairs(searchRoot:GetDescendants()) do
         if v:IsA("BasePart") and v.CanCollide and v.Parent then
+            -- seguridad: no tocar partes muy grandes o ancladas que parecen suelo principal
+            if v.Size.Magnitude > 200 or v.Anchored then
+                goto continue
+            end
             local ok, pos = pcall(function() return v.Position end)
-            if ok and pos and (pos - origin).Magnitude <= radius and v.Size.Y < 80 then
-                local n = v.Name:lower()
-                if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") then
-                    pcall(function()
-                        v.CanCollide = false
-                        v.Transparency = 0.85
-                        -- destruir si muy pequeño o peligro de bloqueo
-                        if v.Size.Magnitude <= 30 then
-                            v:Destroy()
-                        end
-                    end)
-                    count = count + 1
+            if not ok or not pos then goto continue end
+
+            local ap = pos - a
+            local t = ab:Dot(ap) / abLen2
+            -- solo considerar proyección entre A y B (con margen) y cerca de la línea
+            if t >= -0.15 and t <= 1.15 then
+                local closestPoint = a + ab * math.clamp(t, 0, 1)
+                local lateralDist = (pos - closestPoint).Magnitude
+                if lateralDist <= lateralRadius and v.Size.Y < 80 then
+                    local n = v.Name:lower()
+                    if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") or n:find("spinning") then
+                        pcall(function()
+                            v.CanCollide = false
+                            v.Transparency = math.max(0.65, v.Transparency)
+                            if v.Size.Magnitude <= 60 then
+                                v:Destroy()
+                            end
+                        end)
+                        count = count + 1
+                    end
                 end
             end
         end
+        ::continue::
     end
     return count
 end
 
--- AUTO FARM: recorre etapas 1..15 en orden con eliminación opcional de obstáculos
+-- AUTO FARM: recorre etapas 1..15 en orden con eliminación opcional de obstáculos (ahora selectivo)
 local farmActive = false
 local farmThread = nil
 
@@ -134,10 +166,10 @@ local function farmStages(maxStage)
                     -- acercarse al target hasta distancia pequeña
                     local tries = 0
                     while farmActive and target and target.Parent and root and (target.Position - root.Position).Magnitude > 8 and tries < 600 do
-                        -- eliminar obstáculos cercanos si está activado
+                        -- eliminar obstáculos selectivamente a lo largo del camino si está activado
                         if autoDeleteDuringFarm then
                             pcall(function()
-                                deleteNearbyObstacles(root.Position, 50) -- radio 50 studs alrededor
+                                deleteObstaclesAlongPath(root.Position, target.Position, 18) -- radio lateral reducido
                             end)
                         end
 
@@ -155,10 +187,9 @@ local function farmStages(maxStage)
                     task.wait(0.6)
                 end
             else
-                -- Si no hay partes con número exacto, intentar buscar parts cuyo nombre contenga "stage" sin número
-                -- Además podemos eliminar obstáculos en esa zona para intentar pasar
+                -- Si no hay partes con número exacto, intentar eliminar obstáculos cerca de la posición objetivo general
                 if autoDeleteDuringFarm and root then
-                    pcall(function() deleteNearbyObstacles(root.Position, 60) end)
+                    pcall(function() deleteObstaclesAlongPath(root.Position, root.Position + Vector3.new(0,0,-30), 24) end)
                 end
             end
             -- pequeña pausa entre etapas
@@ -181,16 +212,17 @@ if autoFarmEnabled then
     task.spawn(function() farmStages(15) end)
 end
 
--- Delete Obstacles manual (ejecútalo con G o botón)
+-- Delete Obstacles manual (ejecútalo con G o botón) — ahora limitado al folder World2 si existe
 local function deleteObstacles()
     local count = 0
-    for _, v in ipairs(workspace:GetDescendants()) do
+    local searchRoot = worldFolder or workspace
+    for _, v in ipairs(searchRoot:GetDescendants()) do
         if v:IsA("BasePart") and v.CanCollide and v.Size.Y < 80 then
             local n = v.Name:lower()
             if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") then
                 pcall(function()
                     v.CanCollide = false
-                    v.Transparency = 0.75
+                    v.Transparency = math.max(0.6, v.Transparency)
                 end)
                 count = count + 1
             end
