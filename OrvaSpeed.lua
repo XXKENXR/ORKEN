@@ -1,4 +1,4 @@
--- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15 con Auto-Delete Obstacles más seguro)
+-- [ORVA] +1 Speed - Auto Farm Mejorado (Recorre Etapas 1..15 con Auto-Delete Obstacles y botones GUI para móvil)
 
 local player = game.Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
@@ -72,7 +72,7 @@ end
 
 -- BUSCAR FOLDER DEL MAPA (World 2) si existe
 local function findWorldFolder()
-    local candidates = {"World 2", "World2", "World_2", "WorldTwo", "Map", "Maps", "World"}
+    local candidates = {"World 2", "World2", "World_2", "WorldTwo", "Map", "Maps", "World", "CandyAndChocolate", "CandyWorld"}
     for _, name in ipairs(candidates) do
         local f = workspace:FindFirstChild(name)
         if f and (f:IsA("Model") or f:IsA("Folder")) then
@@ -109,7 +109,7 @@ local function deleteObstaclesAlongPath(a, b, lateralRadius)
                 local lateralDist = (pos - closestPoint).Magnitude
                 if lateralDist <= lateralRadius and v.Size.Y < 80 then
                     local n = v.Name:lower()
-                    if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") or n:find("spinning") then
+                    if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") or n:find("spinning") or n:find("block") then
                         pcall(function()
                             v.CanCollide = false
                             v.Transparency = math.max(0.65, v.Transparency)
@@ -173,87 +173,4 @@ local function farmStages(maxStage)
                             end)
                         end
 
-                        local dir = (target.Position - root.Position)
-                        if dir.Magnitude > 0 then
-                            local vel = dir.Unit * 140 + Vector3.new(0, 30, 0)
-                            pcall(function() root.Velocity = vel end)
-                        end
-                        task.wait(0.08)
-                        tries = tries + 1
-                        root = getRoot()
-                        if not root then break end
-                    end
-                    -- si llegamos, esperar un poco para registrar el win
-                    task.wait(0.6)
-                end
-            else
-                -- Si no hay partes con número exacto, intentar eliminar obstáculos cerca de la posición objetivo general
-                if autoDeleteDuringFarm and root then
-                    pcall(function() deleteObstaclesAlongPath(root.Position, root.Position + Vector3.new(0,0,-30), 24) end)
-                end
-            end
-            -- pequeña pausa entre etapas
-            task.wait(0.3)
-        end
-
-        print("[OrvaFarm] Finished stages up to ", finalStage)
-        farmActive = false
-    end)
-    coroutine.resume(farmThread)
-end
-
-local function stopFarm()
-    farmActive = false
-    farmThread = nil
-end
-
--- comenzar automáticamente si está activado
-if autoFarmEnabled then
-    task.spawn(function() farmStages(15) end)
-end
-
--- Delete Obstacles manual (ejecútalo con G o botón) — ahora limitado al folder World2 si existe
-local function deleteObstacles()
-    local count = 0
-    local searchRoot = worldFolder or workspace
-    for _, v in ipairs(searchRoot:GetDescendants()) do
-        if v:IsA("BasePart") and v.CanCollide and v.Size.Y < 80 then
-            local n = v.Name:lower()
-            if n:find("wall") or n:find("spike") or n:find("trap") or n:find("kill") or n:find("obstacle") or n:find("barrier") then
-                pcall(function()
-                    v.CanCollide = false
-                    v.Transparency = math.max(0.6, v.Transparency)
-                end)
-                count = count + 1
-            end
-        end
-    end
-    print("Obstáculos eliminados: " .. count)
-end
-
--- Teclas para controlar
-UIS.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.G then
-        deleteObstacles()
-    elseif input.KeyCode == Enum.KeyCode.F then
-        -- alternar autoFarm
-        autoFarmEnabled = not autoFarmEnabled
-        if autoFarmEnabled then
-            farmStages(15)
-            print("[OrvaFarm] AutoFarm toggled ON")
-        else
-            stopFarm()
-            print("[OrvaFarm] AutoFarm toggled OFF")
-        end
-    elseif input.KeyCode == Enum.KeyCode.H then
-        -- alternar auto-delete during farm
-        autoDeleteDuringFarm = not autoDeleteDuringFarm
-        print("[OrvaFarm] autoDeleteDuringFarm = ", tostring(autoDeleteDuringFarm))
-    end
-end)
-
-print("✅ [ORVA] Auto Farm cargado - Recorriendo etapas 1..15 (Presiona F para alternar, G para eliminar obstáculos, H para toggle auto-delete)")
-pcall(function()
-    game.StarterGui:SetCore("SendNotification", {Title="Orva Auto Farm", Text="AutoFarm: etapas 1..15 activado. F toggle, G delete, H toggle auto-delete", Duration=6})
-end)
+{
